@@ -79,7 +79,7 @@ FLIGHTGEAR_CMAKE_FLAGS = \
 SUB_MAKE_FLAGS := -j9
 
 
-all: install_flightgear install_scripts
+all: install_flightgear install_fgdata install_scripts
 
 
 .cache/flightgear-2.12.1.tar.bz2:
@@ -224,10 +224,7 @@ build_flightgear: $(INSTALL_DIR) src/flightgear install_plib install_openscenegr
 	cd src/flightgear_build && cmake $(FLIGHTGEAR_CMAKE_FLAGS) ../flightgear
 	$(MAKE) $(SUB_MAKE_FLAGS) -C src/flightgear_build
 
-$(INSTALL_DIR)/fgdata:
-	git clone $(FGDATA_REPO) -b $(FGDATA_TAG) --depth 0 $@
-
-install_flightgear: build_flightgear $(INSTALL_DIR)/fgdata
+install_flightgear: build_flightgear
 	$(MAKE) -C src/flightgear_build install
 
 clean_flightgear:
@@ -239,6 +236,21 @@ uninstall_flightgear:
 
 
 ##------------------------------------------------------------
+## Data files
+
+$(INSTALL_DIR)/fgdata:
+	git clone $(FGDATA_REPO) -b $(FGDATA_TAG) --depth 0 $@
+	@# 2.12.1 tag is missing, we need to fix version number
+	echo '2.12.1' >  $@/version
+
+$(INSTALL_DIR)/lib/FlightGear: $(INSTALL_DIR)/fgdata
+	@# For some reason, it is still searched in prefix/lib/FlightGear
+	ln -s ../fgdata $@
+
+install_fgdata: $(INSTALL_DIR)/lib/FlightGear
+
+
+##------------------------------------------------------------
 ## Global
 
 clean: clean_plib clean_openscenegraph clean_openrti clean_simgear clean_flightgear
@@ -247,15 +259,21 @@ uninstall: uninstall_plib uninstall_openscenegraph uninstall_simgear uninstall_f
 
 define LAUNCHER_WRAPPER
 #!/usr/bin/env python
+
 import sys, os
 INSTALL_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'root')
 BIN_NAME = os.path.basename(sys.argv[0])
 BIN_PATH = os.path.join(INSTALL_DIR, 'bin', BIN_NAME)
 ARGS = sys.argv[1:]
 if BIN_NAME == 'fgfs':
-    FGDATA_DIR = os.path.join(INSTALL_DIR, 'fgdata')
+    FGDATA_DIR = os.path.abspath(os.path.join(INSTALL_DIR, 'fgdata'))
     ARGS = ['--fg-root={}'.format(FGDATA_DIR)] + ARGS
-ENV = {'LD_LIBRARY_PATH': os.path.join(INSTALL_DIR, 'lib')}
+LD_LIBRARY_PATH = ':'.join((
+    os.path.join(INSTALL_DIR, 'lib'),
+    os.path.join(INSTALL_DIR, 'lib64', 'x86_64-linux-gnu'),
+))
+ENV = {'LD_LIBRARY_PATH': LD_LIBRARY_PATH}
+print("Running: {0} {1}".format(BIN_PATH, ' '.join(ARGS)))
 os.execve(BIN_PATH, ARGS, ENV)
 endef
 export LAUNCHER_WRAPPER
